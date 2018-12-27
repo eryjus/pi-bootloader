@@ -1,0 +1,57 @@
+#####################################################################################################################
+##
+##  Tupfile -- An alternative to the 'make' build system -- Build the hardware components
+##
+##          Copyright (c)  2018 -- Adam Clark
+##          Licensed under the BEER-WARE License, rev42 (see LICENSE.md)
+##
+## ------------------------------------------------------------------------------------------------------------------
+##
+##     Date      Tracker  Version  Pgmr  Description
+##  -----------  -------  -------  ----  ---------------------------------------------------------------------------
+##  2018-Dec-25  Initial   0.0.1   ADCL  Initial version
+##
+#####################################################################################################################
+
+
+##
+## -- Build out the AFLAGS variable -- for gas
+##    ----------------------------------------
+AFLAGS += -march=armv7ve
+
+
+##
+## -- Build out the CFLAGS variable for gcc
+##    -------------------------------------
+CFLAGS += -ffreestanding
+CFLAGS += -nostdlib
+CFLAGS += -nostartfiles
+CFLAGS += -O2
+CFLAGS += -g
+CFLAGS += -Werror
+CFLAGS += -march=armv7ve
+CFLAGS += -Wall
+CFLAGS += -c
+
+
+##
+## -- Build out the LDFLAGS variable -- for ld
+##    ----------------------------------------
+LDFLAGS += -z max-page-size=0x1000
+
+
+##
+## -- Macros to make the rules simpler
+##    --------------------------------
+!cc = |> armv7-rpi2-linux-gnueabihf-gcc $(CFLAGS) -o %o %f |> %B.o
+!as = |> armv7-rpi2-linux-gnueabihf-as  $(AFLAGS) -o %o %f |> %B.o
+
+
+##
+## -- Rules to make all targets
+##    -------------------------
+: foreach *.s |> !as |>
+: foreach *.c |> !cc |>
+
+: *.o | hardware.ld |> armv7-rpi2-linux-gnueabihf-ld -T hardware.ld $(LDFLAGS) -o %o %f; |> hardware.elf
+: hardware.elf |> armv7-rpi2-linux-gnueabihf-objcopy %f -O binary %o |> kernel7.img

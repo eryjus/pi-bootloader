@@ -69,3 +69,18 @@ What I have going for me is that the complexity of most of this work is on the s
 
 I will start by coding out the hardware component.  But first, I will commit these few initial files.
 
+---
+
+### 2018-Dec-26
+
+I hit the ground running today and managed to complete the coding of the hardware component.  There are some changes to the plan above, which frankly I expected.  These are:
+1. I am using the ASCII `ACK` and `NAK` character `\x06` and `\x15` respectively rather than the character stings.
+1. The server component will need to check periodically to make sure that a `NAK` has not been received and if it has drop into terminal mode to display errors.
+1. The starting kernel location needs to be fed into the hardware component so that it knows where to jump.  This was added after the mbi structure.
+
+Other than the above changes (which really are not significant in my opinion), the plan remains the same.  At this point, I will commit this code to have it on a public repo.
+
+---
+
+
+
