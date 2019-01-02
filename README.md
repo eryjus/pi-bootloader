@@ -8,9 +8,18 @@ This component is intended to be installed on the Pi, taking the place of `kerne
 
 **The server component**
 
-This component will run on the development PC.  It will be fed a `grub.cfg` file, which will contain the location of the kernel and other modules.  The bss of the kernel will be allocated and copied over the serial line as `0` bytes.  Then the modules will be padded to the next 4096 bytes and then copied to the serial port connected to the RPi in the order presented in the `grub.cfg` file.  
+This component will run on the development PC.  It will be fed a `cfg-file` file, which will contain the location of the kernel and other modules.  The bss of the kernel will be allocated and copied over the serial line as `0` bytes.  Then the modules will be padded to the next 4096 bytes and then copied to the serial port connected to the RPi in the order presented in the `cfg-file` file.  
 
 At the same time, the server component will build the Multiboot Information structure, which `pi-bootloader` will pass to the kernel.  This structure will be copied to the RPi hardware in the end and will be copied to a location in lower memory.
+
+**Limitations**
+
+This is not a full multiboot compliant loader.  Not even close.  There are some things to be aware of:
+* The multiboot header is not checked.  No signature is checked and no flags are considered.  No matter what you ask for, you will only get module and memory information.
+* The kernel ELF R/E Program Header section must end 4K aligned.  This is not checked.
+* The kernel ELF RW Program Header section is assumed to end 4K aligned (though not a hard requirement).  This is not checked.
+* The kernel ELF must be linked to load at address `0x100000`.  This is not checked.
+* Parameters for the kernel or modules are not supported.  Module names will be the file name.
 
 **Cross Compiler**
 

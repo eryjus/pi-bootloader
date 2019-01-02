@@ -1,5 +1,10 @@
 .tup
+.vscode
 
 **/*.o
 **/*.elf
 **/*.img
+
+pbl-server
+
+*.cfg

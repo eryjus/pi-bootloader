@@ -30,7 +30,7 @@
 @@
 @@ -- We will put this section at the start of the resulting binary
 @@    -------------------------------------------------------------
-    .section    entry
+    .section    .entry
 
 
 @@
@@ -38,28 +38,30 @@
 @@    and must reside at 0x8000.
 @@    -------------------------------------------------------------------------------------------------
 _start:
-    mrs     r3,cpsr                     @@ get the current program status register
-    and     r3,#0x1f                    @@ and mask out the mode bits
-    cmp     r3,#0x1a                    @@ are we in hyp mode?
+    mrs     r0,cpsr                     @@ get the current program status register
+    and     r0,#0x1f                    @@ and mask out the mode bits
+    cmp     r0,#0x1a                    @@ are we in hyp mode?
     beq     hyp                         @@ if we are in hyp mode, go to that section
     cpsid   iaf,#0x13                   @@ if not switch to svc mode, ensure we have a stack for the kernel; no ints
     b       cont                        @@ and then jump to set up the stack
 
 @@ -- from here we are in hyp mode so we need to exception return to the svc mode
 hyp:
-    mrs     r3,cpsr                     @@ get the cpsr again
-    and     r3,#~0x1f                   @@ clear the mode bits
-    orr     r3,#0x013                   @@ set the mode for svc
-    orr     r3,#1<<6|1<<7|1<<8          @@ disable interrupts as well
-    msr     spsr_cxsf,r3                @@ and save that in the spsr
+    mrs     r0,cpsr                     @@ get the cpsr again
+    and     r0,#~0x1f                   @@ clear the mode bits
+    orr     r0,#0x013                   @@ set the mode for svc
+    orr     r0,#1<<6|1<<7|1<<8          @@ disable interrupts as well
+    msr     spsr_cxsf,r0                @@ and save that in the spsr
 
-    ldr     r3,=cont                    @@ get the address where we continue
-    msr     elr_hyp,r3                  @@ store that in the elr register
+    ldr     r0,=cont                    @@ get the address where we continue
+    msr     elr_hyp,r0                  @@ store that in the elr register
 
     eret                                @@ this is an exception return
 
 @@ -- everyone continues from here
 cont:
+    mov     sp,#0x8000                  @@ set the stack
+
     mrc     p15,0,r3,c0,c0,5            @@ Read Multiprocessor Affinity Register
     and     r3,r3,#0x3                  @@ Extract CPU ID bits
     cmp     r3,#0
@@ -71,29 +73,26 @@ wait_loop:
     wfi                                 @@ wait for interrupt
     b       wait_loop                   @@ go back and do it again
 
-initialize:
-    mov     sp,#0x8000                  @@ set the stack
-
 @@ -- Clear out bss
-	ldr	    r4,=_bssStart
-	ldr	    r9,=_bssEnd
-	mov	    r5,#0
-	mov	    r6,#0
-	mov	    r7,#0
-	mov	    r8,#0
+initialize:
+    ldr        r4,=_bssStart
+    ldr        r9,=_bssEnd
+    mov        r5,#0
+    mov        r6,#0
+    mov        r7,#0
+    mov        r8,#0
 
 bssLoop:
 @@ -- store multiple at r4
-	stmia	r4!, {r5-r8}
+    stmia    r4!, {r5-r8}
 
 @@ -- If we're still below _bssEnd, loop
-	cmp	    r4,r9
+    cmp        r4,r9
     blo     bssLoop
 
 @@ -- Finally jump to the main entry point
     mov     r0,r2                       @@ get the ATAGS and pass that to kMain()
-    ldr     r3,=kMain
-    blx     r3
+    bl      kMain
     b       Halt
 
 
