@@ -14,12 +14,15 @@ At the same time, the server component will build the Multiboot Information stru
 
 **Limitations**
 
-This is not a full multiboot compliant loader.  Not even close.  There are some things to be aware of:
+This is not a fully multiboot compliant loader.  Not even close.  There are some things to be aware of:
 * The multiboot header is not checked.  No signature is checked and no flags are considered.  No matter what you ask for, you will only get module and memory information.
 * The kernel ELF R/E Program Header section must end 4K aligned.  This is not checked.
 * The kernel ELF RW Program Header section is assumed to end 4K aligned (though not a hard requirement).  This is not checked.
 * The kernel ELF must be linked to load at address `0x100000`.  This is not checked.
 * Parameters for the kernel or modules are not supported.  Module names will be the file name.
+
+Additionally, be aware of the following:
+* Currently, only RPi2 is supported.
 
 **Cross Compiler**
 
@@ -35,7 +38,7 @@ You can get `tup` from http://gittup.org/tup/.  Once you have `tup` built and in
 
 **My Journal**
 
-As with all my projects, I will be keeping a JOURNAL.md of my progress and my trials and to help document the problems and decisions I encounter.  There are a few reasons I keep this journal with each project (as opposed to one journal for everything):
+As with all my projects, I will be keeping a JOURNAL.md of my progress and my trials and to help document the problems and decisions I encounter.  There are a few reasons I keep this journal with each project (as opposed to one journal for everything or putting the comments in the code):
 1. I sometimes need to revisit my own thinking and refer back to the journal.
 1. If I put this level of documentation into the code, there would be more comments than code and the actual code would get lost.
 1. I want to be able to keep track of times when I change my mind and the source needs to represent current state, but a bunch of bad decisions.

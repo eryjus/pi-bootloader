@@ -6,8 +6,8 @@
 //          Licensed under the BEER-WARE License, rev42 (see LICENSE.md)
 //
 //  This file is very heavily inspired from raspbootin, which can be found here:
-//  https://raw.githubusercontent.com/mrvn/raspbootin/master/raspbootcom/raspbootcom.cc, though I changed much of 
-//  that code to operate as a state machine.  The license from raspbootin is included here and I gratefully 
+//  https://raw.githubusercontent.com/mrvn/raspbootin/master/raspbootcom/raspbootcom.cc, though I changed much of
+//  that code to operate as a state machine.  The license from raspbootin is included here and I gratefully
 //  acknowledge the contribution:
 //
 //      Copyright (C) 2013 Goswin von Brederlow <goswin-v-b@web.de>
@@ -26,16 +26,16 @@
 //      along with this program; if not, write to the Free Software
 //      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 //
-//  The `main()` function is just a big loop, checking for file descriptors that need attention and then acting 
-//  them.  It will keep track of the action that is being performed so that larger files can be read in blocks and 
-//  passed along to the serial port.  One key here is that the program will also act like a serial console, so 
+//  The `main()` function is just a big loop, checking for file descriptors that need attention and then acting
+//  them.  It will keep track of the action that is being performed so that larger files can be read in blocks and
+//  passed along to the serial port.  One key here is that the program will also act like a serial console, so
 //  it MUST be resilient enough to fall back into that mode on any error, resetting the status.
 //
 //  NOTE:
 //  Most of the variables in this program are global variables.  This is usually bad programming form, and in
 //  this case the program might have been better implemented as a C++ class with all of the attributes private.
 //  However, this is also a standalone program and not a library that will be imported into several other programs.
-//  I made this choice knowing that, at least in this program, the code will never be linked anywhere else.  As a 
+//  I made this choice knowing that, at least in this program, the code will never be linked anywhere else.  As a
 //  matter of fact, I have every intention of keeping this to a 1-source-file program.
 //
 // ------------------------------------------------------------------------------------------------------------------
@@ -46,6 +46,7 @@
 //
 //===================================================================================================================
 
+#define _GNU_SOURCE
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -171,7 +172,7 @@ typedef enum {
 } Line_t;
 
 
-// 
+//
 // -- This structure holds the final configuration line
 //    -------------------------------------------------
 typedef struct {
@@ -180,6 +181,8 @@ typedef struct {
     char *fileName;         // this is the file name in the line
     int fd;                 // this is the file descriptor we will read
     int size;               // this is the bytes that will be sent for the file
+    int padding;            // this will be the number of bytes that will be used to pad to 4K
+    char basename[32];      // this is the name that will be offered to the mbi structure
 } ConfigLine_t;
 
 
@@ -319,6 +322,17 @@ typedef struct Mb1MmapEntry_t {
 
 
 //
+// -- This is the loaded modules block (which will repeat)
+//    ----------------------------------------------------
+typedef struct Mb1Mods_t {
+    uint32_t modStart;
+    uint32_t modEnd;
+    uint32_t modIdent;
+    uint32_t modReserved;
+} __attribute__((packed)) Mb1Mods_t;
+
+
+//
 // -- In this program we will have several global variables passed between the functions
 //    ----------------------------------------------------------------------------------
 const char *dev;
@@ -335,10 +349,11 @@ ConfigLine_t cfgLines[MAX_CONFIG_LINES];
 char cfgFile[MAX_CFG_FILE_SIZE] = {0};
 uint32_t entry = 0;                     // keep track of the kernel entry point
 uint8_t elfHdr[4096] = {0};                      // this is a modest buffer size for 1 elf page
-int elfSects = 0;                       
+int elfSects = 0;
 Elf32_Phdr_t *phdr = 0;
 MB1_t mbi;
 uint32_t mbiSize = sizeof(struct MB1);
+uint32_t modLocation = 0;
 
 
 //
@@ -347,7 +362,7 @@ uint32_t mbiSize = sizeof(struct MB1);
 void SignalHandler(int sig)
 {
     printf("Caught signal %d; exiting            \n", sig);
-    exit(EXIT_SUCCESS); 
+    exit(EXIT_SUCCESS);
 }
 
 
@@ -389,7 +404,7 @@ void ParseCommandLine(int argc, const char * const argv[])
 //
 // -- Initialize the MBI structure
 //    ----------------------------
-void InitMbi(void) 
+void InitMbi(void)
 {
     memset(&mbi, 0, sizeof(mbi));
     mbiSize = sizeof(struct MB1);
@@ -400,7 +415,7 @@ void InitMbi(void)
     Mb1MmapEntry_t *mmap = (Mb1MmapEntry_t *)&mbi.raw[mbiSize];
     mmap->mmapAddr = 0;
     mmap->mmapLength = 0x3f000000;
-    mmap->mmapSize = sizeof(Mb1MmapEntry_t);
+    mmap->mmapSize = sizeof(Mb1MmapEntry_t) - 4;
     mmap->mmapType = 1;
 
     // -- just 1 block of available memory
@@ -514,9 +529,17 @@ static void _OpenDev(void)
 //    ------------------------------------
 void Reinit(void)
 {
-    fprintf(stderr, "\n### Listening on %s     \n", dev);
+    fprintf(stderr, "\n### Listening to %s...      \n", dev);
 
-    // -- select needs the largest FD + 1  
+    // -- Set fdDev non-blocking
+    if (fcntl(fdDev, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl()");
+        close(fdDev);
+        state = OPEN_DEV;
+        return;
+    }
+
+    // -- select needs the largest FD + 1
     fdMax = (fdDev>STDIN_FILENO?fdDev+1:STDIN_FILENO+1);
 
     FD_ZERO(&readSet);
@@ -566,7 +589,7 @@ void OpenDev(void)
                 sleep(1);
                 continue;
             }
-        
+
             // -- we had some other error we cannot handle
             perror(dev);
             exit(EXIT_FAILURE);
@@ -600,6 +623,7 @@ void DoTty(void)
 
     while (1) {
         int breaks = 0;
+        bool didSomething = false;
 
         // -- block until we have something to do
         if (select(fdMax, &readSet, NULL, &exceptSet, NULL) == -1) {
@@ -625,13 +649,13 @@ void DoTty(void)
         // -- input from the user, copy to RPi
         if (FD_ISSET(STDIN_FILENO, &readSet)) {
             ssize_t len = read(STDIN_FILENO, buf, BUF_SIZE);        // read as much as we can
-            
+
             // -- len may be -1, 0, or some number of bytes;
             if (len == -1) {
                 perror("read() on STDIN");
                 exit(EXIT_FAILURE);
             }
-   
+
             len = write(fdDev, buf, len);
 
             if (len == -1) {
@@ -639,6 +663,8 @@ void DoTty(void)
                 state = REINIT;
                 return;
             }
+
+            didSomething = true;
         }
 
         // -- output from the RPi, copy to STDOUT
@@ -646,7 +672,7 @@ void DoTty(void)
             ssize_t len = read(fdDev, buf, BUF_SIZE);
             const char *ptr = buf;
 
-            if (len == -1) {
+            if (len < 1) {          // if we don't get any data, treat it like an error
                 perror("read() from tty");
                 state = REINIT;
                 return;
@@ -660,7 +686,7 @@ void DoTty(void)
                 if (ptr == brk) {
                     ++breaks;
                     ++ptr;
-                    
+
                     if (breaks == 3) {
                         if (ptr != &buf[len]) {
                             fprintf(stderr, "Discarding input after tripple break\n");
@@ -678,21 +704,28 @@ void DoTty(void)
                             perror("write() to stdout");
                             exit(EXIT_FAILURE);
                         }
-                        
+
                         breaks -= len2;
                     }
-        
+
                     while (ptr < brk) {
                         ssize_t len2 = write(STDOUT_FILENO, ptr, brk - ptr);
                         if (len2 == -1) {
                             perror("write() to stdout");
                             exit(EXIT_FAILURE);
                         }
-                        
+
                         ptr += len2;
                     }
                 }
             }
+
+            didSomething = true;
+        }
+
+        if (!didSomething) {
+            state = REINIT;
+            return;
         }
     }
 }
@@ -735,7 +768,7 @@ void ReadConfig(void)
         } else if (setPtr) {
             cfgLines[ln++].originalLine = &cfgFile[i];
             setPtr = false;
-        } 
+        }
 
         if (ln == MAX_CONFIG_LINES) {
             fprintf(stderr, "Too many lines in %s; only %d lines supported\n", cfg, MAX_CONFIG_LINES);
@@ -779,7 +812,7 @@ void ParseElf(void)
 
     Elf32_Ehdr_t *ehdr = (Elf32_Ehdr_t *)elfHdr;
 
-    if (ehdr->e_ident[0] != '\x7f' || ehdr->e_ident[1] != 'E' || ehdr->e_ident[2] != 'L' 
+    if (ehdr->e_ident[0] != '\x7f' || ehdr->e_ident[1] != 'E' || ehdr->e_ident[2] != 'L'
             || ehdr->e_ident[3] != 'F') {
         fprintf(stderr, "Bad ELF Signature\n");
         state = REINIT;
@@ -815,6 +848,7 @@ void ParseElf(void)
     }
 
     cfgLines[0].size = byteCnt;
+    cfgLines[0].padding = 0;                // we took care of that in this function
 }
 
 
@@ -841,8 +875,8 @@ void CheckConfig(void)
             fprintf(stderr, "The top config line must contain the 'kernel' keyword\n");
             state = REINIT;
             return;
-        } 
-        
+        }
+
         if (i > 0 && cfgLines[i].type != MODULE) {
             fprintf(stderr, "All lines but the top line must contain the 'module' keyword\n");
             state = REINIT;
@@ -851,6 +885,7 @@ void CheckConfig(void)
 
         // -- isolate the file name
         cfgLines[i].fileName = Trim(cfgLines[i].originalLine);
+        strcpy(cfgLines[i].basename, basename(cfgLines[i].fileName));
 
         if (cfgLines[i].fileName == NULL) {
             fprintf(stderr, "config file %s has an empty file name on line %d\n", cfg, i + 1);
@@ -876,8 +911,7 @@ void CheckConfig(void)
         }
 
         // -- adjsut the size up to the next 4K
-        if (cfgLines[i].size & 0xfff) cfgLines[i].size = (cfgLines[i].size & 0xfffff000) + 0x1000;
-        fprintf(stderr, "File %d size is %d\n", i + 1, cfgLines[i].size);
+        if (cfgLines[i].size & 0xfff) cfgLines[i].padding = 0x1000 - (cfgLines[i].size & 0xfff);
     }
 
     // -- now, go read some of the kernel and fix the size up
@@ -898,7 +932,7 @@ void SendSize(void)
     char resp;
 
     for (i = 0; i < MAX_CONFIG_LINES; i ++) {
-        totalSize += cfgLines[i].size;
+        totalSize += (cfgLines[i].size + cfgLines[i].padding);
     }
 
     fprintf(stderr, "Notifying the RPi that %d bytes will be sent\n", totalSize);
@@ -908,8 +942,8 @@ void SendSize(void)
 	    perror("fcntl()");
 	    state = REINIT;
         return;
-    }    
-    
+    }
+
     // -- Send the size
     if (write(fdDev, sz, 4) == -1) {
         perror(dev);
@@ -934,6 +968,7 @@ void SendSize(void)
         return;
     }
 
+    modLocation = 0x100000 + totalSize;
     state = SEND_KERNEL;
 }
 
@@ -944,7 +979,7 @@ void SendSize(void)
 void SendKernel(void)
 {
     #define bufSize   1024*64
-    static uint8_t kBuf[bufSize];       // 64 K buffer on the .data section
+    static uint8_t kBuf[bufSize];       // 64 K buffer on the .bss section
     int bytesSent = 0;
     fprintf(stderr, "Sending kernel...\r");
 
@@ -980,8 +1015,6 @@ void SendKernel(void)
                 return;
             }
 
-            fprintf(stderr, "%d of %d bytes were written\n", res, bytes);
-
             sectBytes -= bytes;
             bytesSent += bytes;
             fprintf(stderr, "Sending kernel (%d bytes sent)...\r", bytesSent);
@@ -1001,44 +1034,19 @@ void SendKernel(void)
                 return;
             }
 
-            fprintf(stderr, "%d of %d bytes were written\n", res, bytes);
-
             sectBytes -= bytes;
             bytesSent += bytes;
             fprintf(stderr, "Sending kernel (%d bytes sent)...\r", bytesSent);
         }
     }
 
-    fprintf(stderr, "\nDone\n");
-
-    // -- Set fdDev non-blocking
-    if (fcntl(fdDev, F_SETFL, O_NONBLOCK) == -1) {
-        perror("fcntl()");
-        state = REINIT;
-        return;
-    }
-
-    char ack;
-    int res;
-    
-    while ((res = read(fdDev, &ack, 1)) == 0) { }
-
-    if (res == -1) {
-        perror("Get Ack after kernel\n");
-        state = REINIT;
-        return;
-    }
-
-    if (ack != '\x06') {
-        fprintf(stderr, "Never got ACK after kernel\n");
-    }
-
     state = SEND_MODULES;
+    fprintf(stderr, "The kernel has been sent                      \n");
     #undef bufSize
 }
 
 
-// 
+//
 // -- Send the kernel entry point to the rpi
 //    --------------------------------------
 void SendEntry(void)
@@ -1072,18 +1080,17 @@ void SendEntry(void)
 //    ----------------------------------------------
 void SendMbiSize(void)
 {
+    mbiSize = 8192;             // we need the whole structure based on the string locations
     char *sz = (char *)&mbiSize;
     char resp;
-
-    fprintf(stderr, "Notifying the RPi that %d bytes will be sent in the mbi\n", mbiSize);
 
     // -- Set fdDev blocking
     if (fcntl(fdDev, F_SETFL, 0) == -1) {
 	    perror("fcntl()");
 	    state = REINIT;
         return;
-    }    
-    
+    }
+
     // -- Send the size
     if (write(fdDev, sz, 4) == -1) {
         perror(dev);
@@ -1118,28 +1125,10 @@ void SendMbiSize(void)
 void SendMbi(void)
 {
     char ack;
-    
-    fprintf(stderr, "Sending mbi...\r");
-
-    // -- Set fdDev blocking
-    if (fcntl(fdDev, F_SETFL, 0) == -1) {
-        perror("fcntl()");
-        state = REINIT;
-        return;
-    }
 
     int res = write(fdDev, &mbi, mbiSize);
     if (res == -1) {
         perror("mbi write() to dev");
-        state = REINIT;
-        return;
-    }
-
-    fprintf(stderr, "\nDone\n");
-
-    // -- Set fdDev non-blocking
-    if (fcntl(fdDev, F_SETFL, O_NONBLOCK) == -1) {
-        perror("fcntl()");
         state = REINIT;
         return;
     }
@@ -1156,14 +1145,128 @@ void SendMbi(void)
         fprintf(stderr, "Never got ACK after mbi\n");
     }
 
+    // -- Set fdDev non-blocking
+    if (fcntl(fdDev, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl()");
+        state = REINIT;
+        return;
+    }
+
     state = SEND_ENTRY;
+}
+
+
+//
+// -- Send the modules to the rpi
+//    ---------------------------
+void SendModules(void)
+{
+    #define bufSize   1024*64
+    mbi.MB1.modAddr = 0xfe000 + mbiSize;
+    mbi.MB1.modCount = 0;
+    Mb1Mods_t *modArray = (Mb1Mods_t *)&mbi.raw[mbiSize];
+
+    for (int m = 1; m < MAX_CONFIG_LINES; m ++) {
+        if (cfgLines[m].type == NONE) continue;
+
+        // -- update the mbi with this module information
+        modArray[mbi.MB1.modCount].modStart = modLocation;
+        modArray[mbi.MB1.modCount].modEnd = modLocation + cfgLines[m].size;
+        modArray[mbi.MB1.modCount].modIdent = (uint32_t)(0x100000 - 34 - (m * 34));
+        strcpy((char *)&mbi.raw[8192 - 34 - (m * 34)], cfgLines[m].basename);
+        modLocation += cfgLines[m].size;
+        mbiSize += sizeof(Mb1Mods_t);
+        mbi.MB1.modCount ++;
+
+        static uint8_t mBuf[bufSize];       // 64 K buffer on the .bss section
+        int bytesSent = 0;
+
+        // -- Set fdDev blocking
+        if (fcntl(fdDev, F_SETFL, 0) == -1) {
+            perror("fcntl()");
+            state = REINIT;
+            return;
+        }
+
+        int sectBytes = cfgLines[m].size;
+
+        if (lseek(cfgLines[m].fd, 0, SEEK_SET) == -1) {
+            perror(cfgLines[m].fileName);
+            state = REINIT;
+            return;
+        }
+
+        while (sectBytes > 0) {
+            int bytes = read(cfgLines[m].fd, mBuf, (sectBytes>bufSize?bufSize:sectBytes));
+            if (bytes == -1) {
+                perror("read() modules");
+                state = REINIT;
+                return;
+            }
+
+            int res = write(fdDev, mBuf, bytes);
+            if (res == -1) {
+                perror("sect write() to dev");
+                state = REINIT;
+                return;
+            }
+
+            sectBytes -= bytes;
+            bytesSent += bytes;
+            fprintf(stderr, "Sending module %s (%d bytes sent)...\r", cfgLines[m].basename, bytesSent);
+        }
+
+        sectBytes = cfgLines[m].padding;
+        memset(mBuf, 0, bufSize);
+
+        while (sectBytes > 0) {
+            int bytes = (sectBytes>bufSize?bufSize:sectBytes);
+            int res = write(fdDev, mBuf, bytes);
+            if (res == -1) {
+                perror("padding write() to dev");
+                state = REINIT;
+                return;
+            }
+
+            sectBytes -= bytes;
+            bytesSent += bytes;
+            fprintf(stderr, "Sending module %s (%d bytes sent)...\r", cfgLines[m].basename, bytesSent);
+        }
+    }
+
+    fprintf(stderr, "\rDone                                                                        \n");
+
+    char ack;
+    int res;
+
+    while ((res = read(fdDev, &ack, 1)) == 0) { }
+
+    if (res == -1) {
+        perror("Get Ack after kernel/modules\n");
+        state = REINIT;
+        return;
+    }
+
+    if (ack != '\x06') {
+        fprintf(stderr, "Never got ACK after kernel/modules\n");
+    }
+
+    // -- Set fdDev non-blocking
+    if (fcntl(fdDev, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl()");
+        state = REINIT;
+        return;
+    }
+
+    state = SEND_MBI_SIZE;
+    #undef bufSize
 }
 
 
 //
 // -- This is the main entry point
 //    ----------------------------
-int main(int argc, const char * const argv[]) 
+int main(int argc, const char * const argv[])
 {
     Init(argc, argv);
 
@@ -1171,20 +1274,20 @@ int main(int argc, const char * const argv[])
         switch (state) {
         case EXIT:                  // -- technically this should never happen, but loop to exit
             continue;
-        
+
         case OPEN_DEV:
             OpenDev();              // -- open the device
             break;
 
         case REINIT:
-            Reinit();               // -- reinitialize the connection (assumes that fdDev is still good)
+            state = OPEN_DEV;
             break;
 
         case TTY:
             DoTty();                // -- act at a TTY and pass data to/from the serial device
             break;
 
-        case CONFIG:                
+        case CONFIG:
             ReadConfig();           // -- read the config file and determine if passes edits
             break;
 
@@ -1201,10 +1304,10 @@ int main(int argc, const char * const argv[])
             break;
 
         case SEND_MODULES:
-            state = SEND_MBI_SIZE;
+            SendModules();          // -- send the modules to the rpi (a file as-is, but padded to 4K)
             continue;
 
-        case SEND_MBI_SIZE:    
+        case SEND_MBI_SIZE:
             SendMbiSize();          // -- send the multiboot information structure size
             break;
 
@@ -1215,7 +1318,7 @@ int main(int argc, const char * const argv[])
         case SEND_ENTRY:
             SendEntry();            // -- send the entry point to the rpi
             break;
-        
+
         default:
             break;
         }

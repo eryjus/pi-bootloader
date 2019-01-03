@@ -1,6 +1,6 @@
 ***pi-bootloader***
 
-This file is my journal for building this project.  I do not make modifications to the journal except to occasionally go back and clean up formatting concerns.  Even the typos will persist.  The first entry is on the top while the bottom entry is the more recent. 
+This file is my journal for building this project.  I do not make modifications to the journal except to occasionally go back and clean up formatting concerns.  Even the typos will persist.  The first entry is on the top while the bottom entry is the more recent.
 
 As you read the journal from top to bottom, you may see things revisited and decisions changed as the needs arise and as I learn more about what I am trying to accomplish.  Please enjoy!
 
@@ -45,7 +45,7 @@ Once the 3 breaks are received, the server will evaluate the files to be sent to
 
 The hardware will evaluate the location of the all the data to be sent and will check to make sure it will fit.  This will almost 100% be the case, but it may not or have some trouble with the size for some reason.  If things are good, then the hardware will send the 3 characters 'ACK' back to the server, or the 3 characters 'NAK' if there is a problem.
 
-Once the server receives the 'ACK' character string, it will start to send the kernel, bss-expanded and zeroed, and justified to the next 4096 bytes, followed by each module in turn (in raw form) and justified to 4096 bytes. 
+Once the server receives the 'ACK' character string, it will start to send the kernel, bss-expanded and zeroed, and justified to the next 4096 bytes, followed by each module in turn (in raw form) and justified to 4096 bytes.
 
 The hardware component will place this data at `0x100000`.
 
@@ -65,7 +65,7 @@ After receiving the final 'ACK' string the hardware will boot.
 
 ---
 
-What I have going for me is that the complexity of most of this work is on the server side, which will be a simple linux application, whereas the the hardware component will only need to communicate with the PL011 UART. 
+What I have going for me is that the complexity of most of this work is on the server side, which will be a simple linux application, whereas the the hardware component will only need to communicate with the PL011 UART.
 
 I will start by coding out the hardware component.  But first, I will commit these few initial files.
 
@@ -84,7 +84,7 @@ Other than the above changes (which really are not significant in my opinion), t
 
 So, now I need to get the server component written.  The good thing is that this is really a PC application -- no cross-compiler; no emulation.  I can (for the most part anyway) write and test the application right here.
 
-I think one of the first things I need to do is decide on the parameters for the command line.  I think I am going to need 3: 
+I think one of the first things I need to do is decide on the parameters for the command line.  I think I am going to need 3:
 1. The path to the serial device to use
 2. The path to the `grub.cfg` file
 2. The path to the sysroot from which all the files are rooted in the `grub.cfg` file
@@ -109,7 +109,7 @@ I did manage to find a couple of bugs, including one I had to retrofit back into
 
 ### 2018-Dec-27
 
-I am fighting to make sure that the hardware component works.  I have checked my code against several sources and everything looks good.  My `uart01.bin` does output to the console, so I know that the everything is working -- but it also uses the mini-UART.  
+I am fighting to make sure that the hardware component works.  I have checked my code against several sources and everything looks good.  My `uart01.bin` does output to the console, so I know that the everything is working -- but it also uses the mini-UART.
 
 So, I am going to copy the `raspbootin` version (`raspbootin`) into this project and retool it to compile with my own toolset.  The `raspbootin` version does use the real PL011 UART, so it should work out of the box and allow me to test a bit.  That's the plan anyway.
 
@@ -128,7 +128,7 @@ I'm an idiot!  I wrote my entry point as the following:
     .section    entry
 ```
 
-However, my linker script is looking for the section named `.entry`...  with a leading period.  I'm going to switch back and try to get the UART to work.  So, the PL011 UART is still not working, but the mini-UART does. 
+However, my linker script is looking for the section named `.entry`...  with a leading period.  I'm going to switch back and try to get the UART to work.  So, the PL011 UART is still not working, but the mini-UART does.
 
 ---
 
@@ -149,11 +149,11 @@ The first order of business here is going to be to update the main program to re
 So I have the code to read `cfg-file` and determine the number of bytes to send written (not sending the bytes yet).  I am getting a segmentation fault:
 
 ```
-[adam@adamlt rpi2b]$ pbl-server /dev/ttyUSB0 boot/grub/cfg-file 
+[adam@adamlt rpi2b]$ pbl-server /dev/ttyUSB0 boot/grub/cfg-file
 pi-bootloader v0.0.1
   Please report bugs at https://github.com/eryjus/pi-bootloader
   [Portions copyright (C) 2013 Goswin von Brederlow]
-### Listening on /dev/ttyUSB0     
+### Listening on /dev/ttyUSB0
 
 'pi-bootloader' (hardware component) is loaded
    Waiting for kernel and modules...
@@ -227,9 +227,9 @@ This means I will be stripping out most of the code I have written so far.  It's
 Ah-hah!  I've found something.  I got the Hardware to report back the size it is being given, and that size is not the same as what I am sending.
 
 ```
-[adam@adamlt boot]$ pbl-server /dev/ttyUSB0 uart01.img 
+[adam@adamlt boot]$ pbl-server /dev/ttyUSB0 uart01.img
 Raspbootcom V1.0
-### Listening on /dev/ttyUSB0     
+### Listening on /dev/ttyUSB0
 
 'pi-bootloader' (hardware component) is loaded
    Waiting for kernel and modules...
@@ -244,7 +244,7 @@ In fact, 292 is `0x0124` and 74752 is `0x012400`.  So there is an extra byte bei
 It turns out I needed to flush the receiver buffer on the RPi.  Once I got that complete I am getting the result I am looking for:
 
 ```
-### Listening on /dev/ttyUSB0     
+### Listening on /dev/ttyUSB0
 
 'pi-bootloader' (hardware component) is loaded
    Waiting for kernel and modules...
@@ -260,13 +260,13 @@ Well, mostly.  I think I need to put a short delay into the code to make sure I 
 So, I have the Hardware component cleaned back up (with some code missing but that is OK).  The next step is to make sure I am getting the conversation properly handled on both sizes.  The Hardware is booting, but the Server is not expecting it to and fails back into tty mode.  All-in-all it is working; just not the way I want it to.  Oh, and by the way, it is properly sending the ELF version, not the image!  YAY!  So, with just a little bit of work, I should be able to get my real loader executing.  And it was only a single line of code to add.  This is the `pi-bootloader` running an ELF properly:
 
 ```
-[adam@adamlt pi-bootloader]$ pbl-server /dev/ttyUSB0 uart01.cfg                                               
+[adam@adamlt pi-bootloader]$ pbl-server /dev/ttyUSB0 uart01.cfg
 pi-bootloader v0.0.1
   (C) 2018 Adam Clark under the BEER-WARE license
   (Portions copyright (C) 2013 Goswin von Brederlow under GNUGPL v3)
   Please report bugs at https://github.com/eryjus/pi-bootloader
 ### Waiting for /dev/ttyUSB0...
-### Listening on /dev/ttyUSB0     
+### Listening on /dev/ttyUSB0
 
 'pi-bootloader' (hardware component) is loaded
    Waiting for kernel and modules...
@@ -383,4 +383,31 @@ The problem was the check of `byteCnt` was outside the loop; moving it inside th
 ---
 
 At this point, I have everything sent to the rpi except the additional modules.  This includes the MBI structure.  From here, I will have to make modifications to both Century-OS and pi-bootloader to get this debugged.  Right now, it makes the most sense to track my work here, even though it will require changes to Century-OS to add debugging code.  The point here is that there should not be any changed to the overall logic in Century-OS, and if there are I will be documenting them there.
+
+---
+
+### 2019-Jan-02
+
+I have the loader running right up to the point where it is looking for the kernel.  So, I guess I need to get the modules loaded in the boot loader as well.
+
+One other thing I noticed is that I am not able to get `pbl-server` to reset when I unplug the rpi and plug it back in.  I gotta work on that as well.
+
+So, which one first.  Well, my Hardware component is (mostly?) stable so I really should be able to unplug to reset.  That is also a feature I need to have working to release a version.  I will start with that as it will make my development/testing cycles easier.
+
+That is working now.  Woohoo!!
+
+So the next (and I think the last) thing is to push the modules to the Hardware.  There should not need to be a change in the Hardware component because the modules will be added to the end of the kernel without any decoration.  I just need to add the module information to the MBI.
+
+---
+
+OK, I finally have everything sending to the pi.  However, when getting to the part where the pi boots, it is locking up again.  I am going to try again without the kernel module to see if I managed to mess up the handshaking at all.
+
+---
+
+I found a few errors in the calculations for the number of bytes to send.  I got that all cleaned up and now the loader is trying to boot the kernel.  This is success for `pi-bootloader` and should in effect complete the primary development.
+
+There may be a few things that I want to button up before I call this a released product, but they are minor.  In the meantime, I will commit this version and push it to github.
+
+
+
 
