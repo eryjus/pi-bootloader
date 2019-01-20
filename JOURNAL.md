@@ -408,6 +408,46 @@ I found a few errors in the calculations for the number of bytes to send.  I got
 
 There may be a few things that I want to button up before I call this a released product, but they are minor.  In the meantime, I will commit this version and push it to github.
 
+---
+
+### 2019-Jan-03
+
+I found a bug in where the size of the `kernel` component was being represented wrong and therefore the modules were shifted farther than they should have been.  This was corrected and I am able to get farther along.  The kernel.elf is being recognized and being processed properly.
+
+```
+Preparing to enable paging
+Paging is enabled
+Jumping to the kernel
+```
+
+If I am reading this output correctly, I am successfully getting paging enabled (which happens before the `Jumping to the kernel` line).
+
+```C
+    SerialPutS("Jumping to the kernel\n");
+    ent();
+```
+
+This is literally the last thing that happens before we go off to the kernel code.
+
+---
+
+### 2019-Jan-05
+
+Well, I have finally gotten to the point where I need a good frame buffer.  The question at hand at this point it whether I need to detect this in the Hardware component or if I can make some assumptions and just pass off the defaults from the Server component.
+
+I think the best bet at this point it to build it into the Hardware component.  I cannot find any information on what the static values would be.
+
+Actually, I can handle this in the loader....  This is what I had done in the past in `century` and I should be able to leverage this code for now.
+
+So, there are no changes to be made here at this point.
+
+---
+
+### 2019-Jan-19
+
+There was a problem I found related to aligning multiple modules.  This was fixed and multiple modules are working now.
+
+I will commit these changes.
 
 
 

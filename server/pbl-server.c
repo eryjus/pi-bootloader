@@ -968,7 +968,7 @@ void SendSize(void)
         return;
     }
 
-    modLocation = 0x100000 + totalSize;
+    modLocation = 0x100000 + cfgLines[0].size;
     state = SEND_KERNEL;
 }
 
@@ -1171,10 +1171,10 @@ void SendModules(void)
 
         // -- update the mbi with this module information
         modArray[mbi.MB1.modCount].modStart = modLocation;
-        modArray[mbi.MB1.modCount].modEnd = modLocation + cfgLines[m].size;
+        modArray[mbi.MB1.modCount].modEnd = modLocation + cfgLines[m].size + cfgLines[m].padding;
         modArray[mbi.MB1.modCount].modIdent = (uint32_t)(0x100000 - 34 - (m * 34));
         strcpy((char *)&mbi.raw[8192 - 34 - (m * 34)], cfgLines[m].basename);
-        modLocation += cfgLines[m].size;
+        modLocation += (cfgLines[m].size + cfgLines[m].padding);
         mbiSize += sizeof(Mb1Mods_t);
         mbi.MB1.modCount ++;
 
