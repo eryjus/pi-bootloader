@@ -10,6 +10,7 @@
 //     Date      Tracker  Version  Pgmr  Description
 //  -----------  -------  -------  ----  ---------------------------------------------------------------------------
 //  2018-Dec-25  Initial   0.0.1   ADCL  Initial version
+//  2019-Jun-08  Initial   0.0.1   ADCL  Sent the additional processors to the kernel code as well
 //
 //===================================================================================================================
 
@@ -158,14 +159,21 @@ uint8_t SerialGetByte(void)
 
 
 //
+// -- These are used to sent the APs to the kernel as well
+//    ----------------------------------------------------
+const uint32_t mbiLoc = 0xfe000;
+extern uint32_t entryPoint;
+
+
+//
 // -- This is the main entry point for the hardware component.  It will walk through the steps required to get
 //    the kernel and related modules from the server, and then boot the OS.
 //    --------------------------------------------------------------------------------------------------------
 void kMain(uint32_t atags)
 {
-    const uint32_t kernelLoc = 0x100000;
-    const uint32_t mbiLoc = 0xfe000;
     typedef void (*kernel_t)(uint32_t r0, uint32_t r1, uint32_t r2) __attribute__((noreturn));
+    kernel_t kernel = (kernel_t)0;
+    const uint32_t kernelLoc = 0x100000;
 
     SerialInit();
 
@@ -214,6 +222,9 @@ void kMain(uint32_t atags)
     // -- If we made it here without an error notify we are booting
     SerialPutS("Booting...\n");
 
-    kernel_t kernel = (kernel_t)entry;
+    entryPoint = entry;
+    kernel = (kernel_t)entry;
+    __asm__ volatile("dsb");        // -- perform a memory synchronization since entry needs to be updated
+    __asm__ volatile("sev");        // -- send an event tot he other cpus, signaling that it's time to go
     kernel(0x2badb002, mbiLoc, 0);
 }

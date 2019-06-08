@@ -14,6 +14,7 @@
 @@     Date      Tracker  Version  Pgmr  Description
 @@  -----------  -------  -------  ----  ---------------------------------------------------------------------------
 @@  2018-Dec-25  Initial   0.0.1   ADCL  Initial version
+@@  2019-Jun-08  Initial   0.0.1   ADCL  Send the APs to the kernel code as well
 @@
 @@===================================================================================================================
 
@@ -25,6 +26,7 @@
     .globl      DoNothing
     .globl      GetCBAR
     .globl      Halt
+    .globl      entryPoint
 
 
 @@
@@ -67,11 +69,26 @@ cont:
     cmp     r3,#0
     beq     initialize                  @@ if we’re on CPU0 goto the start
 
-@@ -- all other cores will drop in to this loop - a low power mode infinite loop
-Halt:
+@@ -- all other cores will drop in to this loop - a low power mode loop waiting to be able to jump to the kernel
 wait_loop:
-    wfi                                 @@ wait for interrupt
-    b       wait_loop                   @@ go back and do it again
+    wfe                                 @@ wait for event
+
+    ldr     r4,=entryPoint              @@ get the address of the kernel
+    ldr     r4,[r4]                     @@ and the contents of that variable
+    cmp     r4,#0                       @@ has the kernel been set yet?
+    beq     wait_loop                   @@ if not, then we can loop and wait some more
+
+    mov     r0,#0xb002                  @@ load the registers with the boot values
+    movt    r0,#0x2bad
+    ldr     r1,=mbiLoc                  @@ this is a variable address
+    ldr     r1,[r1]                     @@ and this is its contents
+    mov     r2,#0
+
+    mov     pc,r4                       @@ jump to the kenrel code -- the other cpus do not have a valid stack
+
+Halt:
+    wfi
+    b       Halt
 
 @@ -- Clear out bss
 initialize:
@@ -110,3 +127,9 @@ GetCBAR:
 DoNothing:
     mov     pc,lr                           @@ just return, but the compiler cannot optimize
 
+
+@@
+@@ -- This is the entry point, stored from the elf loader
+@@    ---------------------------------------------------
+entryPoint:
+    .word   0

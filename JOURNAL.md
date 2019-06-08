@@ -449,5 +449,9 @@ There was a problem I found related to aligning multiple modules.  This was fixe
 
 I will commit these changes.
 
+---
 
+### 2019-Jun-08
+
+The next thing that is missing is to hand off processing of all the other processors to the loaded kernel.  In the manner in which this is configured now, the hardware code will enter an infinite loop and the processors will never leave this section of code.  To make matters worse, in the event that the cpu is able to execute the code and it has been overwritten later down the road (highly likely), then we have a problem with that is really being executed.  THerefore, I need to hand this off to the kernel on exit and let the kernel code handle the CPUs.
 
