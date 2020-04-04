@@ -455,3 +455,8 @@ I will commit these changes.
 
 The next thing that is missing is to hand off processing of all the other processors to the loaded kernel.  In the manner in which this is configured now, the hardware code will enter an infinite loop and the processors will never leave this section of code.  To make matters worse, in the event that the cpu is able to execute the code and it has been overwritten later down the road (highly likely), then we have a problem with that is really being executed.  THerefore, I need to hand this off to the kernel on exit and let the kernel code handle the CPUs.
 
+---
+
+### 2020-Apr-04
+
+Today, I found a problem reading input from stdin and moving that input to the serial port.  I was able to relatively quickly solve the general input problem, but I also have a problem reading the enter key.  So, now I need to get to the bottom of that.

@@ -625,6 +625,13 @@ void DoTty(void)
         int breaks = 0;
         bool didSomething = false;
 
+        FD_ZERO(&readSet);
+        FD_ZERO(&writeSet);
+        FD_ZERO(&exceptSet);
+
+        FD_SET(STDIN_FILENO, &readSet);
+        FD_SET(fdDev, &readSet);
+
         // -- block until we have something to do
         if (select(fdMax, &readSet, NULL, &exceptSet, NULL) == -1) {
             // -- if we get some error, assume we need to reset
